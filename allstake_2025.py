@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 import polars as pl
 from dotenv import load_dotenv
-from psycopg2 import connect
+import psycopg2 
 import logging
 
 # Log events of interest
@@ -12,7 +12,7 @@ logger.setLevel(logging.INFO)
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(logging.Formatter(
     '%(asctime)s | %(name)s | %(levelname)s | %(message)s'))
-logger.adHandler(console_hanlder)
+logger.addHandler(console_handler)
 
 load_dotenv()
 
@@ -27,19 +27,9 @@ if __name__ == "__main__":
 
     try:
         with psycopg2.connect(conn_string) as con:
-
-            async with ClientSession() as client:
-                with con.cursor() as cur:
-                    cur.execute()
-                await populate_board_ids_on_das_jobs(client,con)
-                logger.info("Inserted board ids on the external board ids column on the DAS Jobs board")
-                await populate_db_with_monday_board_two_stage(con, client, "Students")
-                logger.info("Activelist pipeline completed successfully.")
-                model_names = ["Job","Store","Financials","Feedback"]
-                await ingest_das_jobs_board_two_stage(con,client,model_names)
-                logger.info("DAS Jobs pipeline completed successfully.")
-                await populate_db_with_monday_board_two_stage(con, client, "Booking")
-                logger.info("Bookings pipeline completed successfully.")
+            with con.cursor() as cur:
+                cur.execute("""SELECT * FROM  staging_booking_tb""")
+                print(cur.fetchall())
 
     except Exception as e:
         logger.error(f"Database connection failed: {e}")
