@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 import polars as pl
 from dotenv import load_dotenv
-import psycopg2 
+import psycopg
 import logging
 
 # Log events of interest
@@ -26,7 +26,7 @@ if __name__ == "__main__":
     conn_string = f"dbname={db_name} user={db_user} password={db_pwd} host={db_host} port={db_port}"
 
     try:
-        with psycopg2.connect(conn_string) as con:
+        with psycopg.connect(conn_string) as con:
             with con.cursor() as cur:
                 cur.execute("""SELECT * FROM  staging_booking_tb""")
                 print(cur.fetchall())
