@@ -24,14 +24,28 @@ if __name__ == "__main__":
     db_user= os.getenv("DB_USER")
 
     conn_string = f"dbname={db_name} user={db_user} password={db_pwd} host={db_host} port={db_port}"
-
-    try:
-        with psycopg.connect(conn_string) as con:
-            with con.cursor() as cur:
-                cur.execute("""SELECT * FROM  staging_booking_tb""")
-                print(cur.fetchall())
+"""    try:
+        query = "SELECT * FROM  staging_booking_tb"
+        df = pl.read_database_uri(query=query, uri=conn_string)
+        print(df)
 
     except Exception as e:
         logger.error(f"Database connection failed: {e}")
         logger.error("Make sure PostgreSQL is running: sudo systemctl start postgresql")
+"""
+
+    try:
+        with psycopg.connect(conn_string) as con:
+            df = pl.read_database(query='SELECT * FROM staging_booking_tb', connection=conn)
+            print(df)
+
+            """
+            with con.cursor() as cur:
+                cur.execute(SELECT * FROM  staging_booking_tb)
+                print(cur.fetchall())
+            """
+    except Exception as e:
+        logger.error(f"Database connection failed: {e}")
+        logger.error("Make sure PostgreSQL is running: sudo systemctl start postgresql")
+
 
