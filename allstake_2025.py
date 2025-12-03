@@ -27,7 +27,15 @@ def ingest_table(table_name:str, con:connection)->pl.DataFrame:
     return df
 
 def bookingTransformations(df:pl.DataFrame)->pl.DataFrame:
-    return df.select(cs.exclude('responsible_for_qc','last_updated_at','raw_data','ingestion_timestamp')
+    return (
+        df
+        .select(
+            cs.exclude("responsible_for_qc","last_updated_at","raw_data","ingestion_timestamp")
+        )
+        .with_columns([
+            pl.col(["arrival_time","finish_time","departure_time"]).cast(pl.datetime),
+            pl.col(["amount_paid","duration","hours_worked","bonuses","deductions"]).cast(pl.Float16)
+        ])
     )
 
 def printTables(con:connection):
