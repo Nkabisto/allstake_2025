@@ -33,8 +33,8 @@ def bookingTransformations(df:pl.DataFrame)->pl.DataFrame:
             cs.exclude("responsible_for_qc","last_updated_at","raw_data","ingestion_timestamp")
         )
         .with_columns([
-            pl.col(["arrival_time","finish_time","departure_time"]).cast(pl.datetime),
-            pl.col(["amount_paid","duration","hours_worked","bonuses","deductions"]).cast(pl.Float16)
+            pl.col(["arrival_time","finish_time","departure_time"]).str.strptime(pl.Datetime, format="%I:%M %p", strict=False),
+            pl.col(["amount_paid","duration","hours_worked","bonuses","deductions"]).cast(pl.Float64, strict=False)
         ])
     )
 
@@ -43,7 +43,7 @@ def printTables(con:connection):
     for tb in tables:
         df = ingest_tables(tb,con)
 
-        print(df.sample(min(10,df.height)))
+        print(df.sample(min(100,df.height)))
         print(df.columns)
 
 if __name__ == "__main__":
@@ -59,9 +59,8 @@ if __name__ == "__main__":
             booking_df = ingest_table("staging_booking_tb",con)
             booking_df = bookingTransformations(booking_df)
             print(booking_df.sample(20))
-            
+
     except Exception as e:
-        logger.error(f"Database connection failed: {e}")
-        logger.error("Make sure PostgreSQL is running: sudo systemctl start postgresql")
+        logger.error(f"Error detected: {e}")
 
 
