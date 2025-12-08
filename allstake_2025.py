@@ -28,16 +28,26 @@ def ingest_table(table_name:str, con:connection)->pl.DataFrame:
 
 def bookingTransformations(df:pl.DataFrame)->pl.DataFrame:
     return (
-        df
-        .select(
-            cs.exclude("responsible_for_qc","last_updated_at","raw_data","ingestion_timestamp")
-        )
-        .with_columns([
+        df.with_columns([
+            # Parse time columns to Datetime
             pl.col(["arrival_time","finish_time","departure_time"]).str.strptime(pl.Datetime, format="%I:%M %p", strict=False),
-            pl.col(["amount_paid","duration","hours_worked","bonuses","deductions"]).cast(pl.Float64, strict=False)
+
+            # Cast numeric columns to Float64
+            pl.col(["amount_paid","hours_worked","bonuses","deductions"]).cast(pl.Float64, strict=False),
+
+            # Replace NaN in duration with hours_worked
+            pl.when(pl.col("duration").cast(pl.Float64, strict=False).is_nan())
+            .then(pl.col("hours_worked").cast(pl.Float64, strict=False))
+            .otherwise(pl.col("duration").cast(pl.Float64, strict=False))
+            .alias("duration")
         ])
     )
 
+'''
+.select(
+    cs.exclude("responsible_for_qc","last_updated_at","raw_data","ingestion_timestamp")
+)
+'''  
 def printTables(con:connection):
     tables = ['staging_booking_tb', 'staging_financials_tb', 'staging_jobs_tb','staging_stocktaker_tb']
     for tb in tables:
@@ -58,7 +68,7 @@ if __name__ == "__main__":
         with psycopg.connect(conn_string) as con:
             booking_df = ingest_table("staging_booking_tb",con)
             booking_df = bookingTransformations(booking_df)
-            print(booking_df.sample(20))
+            print(booking_df["duration","hours_worked"].sample(30))
 
     except Exception as e:
         logger.error(f"Error detected: {e}")
