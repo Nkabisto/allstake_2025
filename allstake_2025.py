@@ -27,31 +27,35 @@ def ingest_table(table_name:str, con:connection)->pl.DataFrame:
     return df
 
 def bookingTransformations(df:pl.DataFrame)->pl.DataFrame:
-    return (
-        df.with_columns([
+    # Parse times first 
+    df = df.with_columns([
             # Parse time columns to Datetime
             pl.col(["arrival_time","finish_time","departure_time"]).str.strptime(pl.Datetime, format="%I:%M %p", strict=False),
 
             # Cast numeric columns to Float64
-            pl.col(["amount_paid","hours_worked","bonuses","deductions"]).cast(pl.Float64, strict=False),
-
-            # Replace NaN in duration with hours_worked
-            pl.when(pl.col("duration").cast(pl.Float64, strict=False).is_nan())
-            .then(pl.col("hours_worked").cast(pl.Float64, strict=False))
-            .otherwise(pl.col("duration").cast(pl.Float64, strict=False))
-            .alias("duration")
+            pl.col(["amount_paid","duration","hours_worked","bonuses","deductions"]).cast(pl.Float64, strict=False),
         ])
-    )
+    # Calculate duration from times 
+    df = df.with_columns([
+        # Calculate time-based duration
+        pl.when(pl.col("finish_time") < pl.col("arrival_time"))
+        .then((pl.col("finish_time") + pl.duration(days=1) - pl.col("arrival_time")).dt.total_hours())
+        .otherwise((pl.col("finish_time") - pl.col("arrival_time")).dt.total_hours())
+        .alias("time_based_duration")
+    ])
 
-'''
-.select(
-    cs.exclude("responsible_for_qc","last_updated_at","raw_data","ingestion_timestamp")
-)
-'''  
+    # Final duration: prefer existing duration, fall back to time-based calculation
+    return df.with_columns([
+        pl.coalesce(
+            pl.col("duration").fill_nan(pl.col("hours_worked")),
+            pl.col("time_based_duration")
+        ).alias("duration")
+    ]).drop("time_based_duration")
+
 def printTables(con:connection):
     tables = ['staging_booking_tb', 'staging_financials_tb', 'staging_jobs_tb','staging_stocktaker_tb']
     for tb in tables:
-        df = ingest_tables(tb,con)
+        df = ingest_table(tb,con)
 
         print(df.sample(min(100,df.height)))
         print(df.columns)
@@ -66,6 +70,7 @@ if __name__ == "__main__":
     conn_string = f"dbname={db_name} user={db_user} password={db_pwd} host={db_host} port={db_port}"
     try:
         with psycopg.connect(conn_string) as con:
+  #          printTables(con)
             booking_df = ingest_table("staging_booking_tb",con)
             booking_df = bookingTransformations(booking_df)
             print(booking_df["duration","hours_worked"].sample(30))
