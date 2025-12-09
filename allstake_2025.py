@@ -19,6 +19,7 @@ logger.addHandler(console_handler)
 load_dotenv()
 
 def ingest_table(table_name:str, con:connection)->pl.DataFrame:
+    logger.info(f"Ingesting table: {table_name}")
     try:
         df = pl.read_database(query=f'SELECT * FROM {table_name}',connection=con)
     except Exception as e:
@@ -27,6 +28,7 @@ def ingest_table(table_name:str, con:connection)->pl.DataFrame:
     return df
 
 def bookingTransformations(df:pl.DataFrame)->pl.DataFrame:
+    logger.info("Transforming the booking table")
     # Parse times first 
     df = df.with_columns([
             # Parse time columns to Datetime
@@ -36,6 +38,7 @@ def bookingTransformations(df:pl.DataFrame)->pl.DataFrame:
             pl.col(["amount_paid","duration","hours_worked","bonuses","deductions"]).cast(pl.Float64, strict=False),
         ])
     # Calculate duration from times 
+    logger.info("Calculating the duration column using the finish_time and arrival_time columns")
     df = df.with_columns([
         # Calculate time-based duration
         pl.when(pl.col("finish_time") < pl.col("arrival_time"))
@@ -47,15 +50,17 @@ def bookingTransformations(df:pl.DataFrame)->pl.DataFrame:
     # Final duration: prefer existing duration, fall back to time-based calculation
     return df.with_columns([
         pl.coalesce(
-            pl.col("duration").fill_nan(pl.col("hours_worked")),
+            pl.col("duration")
+            .fill_nan(pl.col("hours_worked")),
             pl.col("time_based_duration")
         ).alias("duration")
     ]).drop("time_based_duration")
 
 def transformFinancialsTbl(df:pl.DataFrame)->pl.DataFrame:
+    logger.info("Transforming the Financials table columns from type string to Float64")
     # Cast to numeric
-     return df.with_columns([
-       pl.col(["scanner_cost_hr","auditor_controller_cost_hr","auditor_controller_cost_hr","assistant_co_ordinator_co_hr","co_ordinator_cost_hr"]).cast(pl.Float64, strict=False)])
+    return df.with_columns([
+        pl.col(["scanner_cost_hr","auditor_controller_cost_hr","auditor_controller_cost_hr","assistant_co_ordinator_co_hr","co_ordinator_cost_hr"]).cast(pl.Float64, strict=False)])
 
 def printTables(con:connection):
     tables = ['staging_booking_tb', 'staging_financials_tb', 'staging_jobs_tb','staging_stocktaker_tb']
@@ -65,27 +70,47 @@ def printTables(con:connection):
         print(df.sample(min(100,df.height)))
         print(df.columns)
 
-def getAmountPaid(df)->pl.DataFrame:
+def getAmountPaid(df:pl.DataFrame)->pl.DataFrame:
+    logger.info("Calculating the amount_paid column")
     # Build conditional expression
     condition = pl.when(pl.col("job_position") == "COUNTER").then(pl.col("counter_cost_hr"))
-    conditions =[ 
-            ("SCANNER", "scanner_cost_hr"),
-            ("AUDITOR", "auditor_controller_cost_hr"),
-            ("CONTROLLER","auditor_controller_cost_hr"), 
-            ("ASS-COORD", "assistant_co_ordinator_co_hr"),
-            ("COORD","co_ordinator_cost_hr")
-    ] 
+    conditions = {
+        "SCANNER":  "scanner_cost_hr",
+        "AUDITOR":  "auditor_controller_cost_hr",
+        "CONTROLLER": "auditor_controller_cost_hr",
+        "ASS COORD": "assistant_co_ordinator_co_hr",
+        "COORD": "co_ordinator_cost_hr"
+    }
 
-    for job_position, cost_col in conditions:
+    # --- Defensive check: ensure required columns exists ---
+    required_cols = {"job_position", "duration", "bonuses", "deductions","counter_cost_hr"} | set(conditions.values())
+    missing = required_cols - set(df.columns)
+
+    if missing:
+        raise ValueError(f"Missing required columns in DataFrame: {missing}")
+
+    for job_position, cost_col in conditions.items():
         condition = condition.when(pl.col("job_position") == job_position).then(pl.col(cost_col))
 
-    hourly_rate_expr = condition.otherwise(pl.lit(0))
+    hourly_rate_expr = (
+        condition
+        .otherwise(0.0)
+        .cast(pl.Float64)
+        .fill_null(0.0)
+        .fill_nan(0.0)
+    )
 
+
+    logger.info("Calculating the final amount_paid using the hourly_rate_expr, duration, bonuses and deductions columns")
     # Calculate final amount
-    return df.with_columns([
-        (hourly_rate_expr * pl.col("duration") + pl.col("bonuses") - pl.col("deductions"))
-        .alias("amount_paid")
-    ])
+    return df.with_columns(
+        (
+            hourly_rate_expr
+            * pl.col("duration").cast(pl.Float64, strict=False).fill_null(0.0).fill_nan(0.0)
+            + pl.col("bonuses").cast(pl.Float64, strict=False).fill_null(0.0).fill_nan(0.0)
+            - pl.col("deductions").cast(pl.Float64, strict=False).fill_null(0.0).fill_nan(0.0)
+        ).alias("amount_paid")
+    )
 
 if __name__ == "__main__":
     db_name = os.getenv("DB_NAME")
@@ -102,7 +127,7 @@ if __name__ == "__main__":
             booking_df = ingest_table("staging_booking_tb",con)
             booking_df = bookingTransformations(booking_df)
             df = getAmountPaid(booking_df.join(job_cost_df,on="job_number",how="inner"))
-            print(df["student_number","job_number","booked","amount_paid"])
+            print(df["student_number","job_number","booked","duration","amount_paid"].sample(20))
             """
             print(booking_df["duration","hours_worked"].describe())
             """
