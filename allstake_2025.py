@@ -70,10 +70,17 @@ if __name__ == "__main__":
     conn_string = f"dbname={db_name} user={db_user} password={db_pwd} host={db_host} port={db_port}"
     try:
         with psycopg.connect(conn_string) as con:
-  #          printTables(con)
+            financials_df = ingest_table("staging_financials_tb",con)
+            job_cost_df = financials_df["job_number","status","counter_cost_hr","scanner_cost_hr","auditor_controller_cost_hr","assistant_co_ordinator_co_hr","co_ordinator_cost_hr"]
             booking_df = ingest_table("staging_booking_tb",con)
+            df = booking_df.join(job_cost_df,on="job_number",how="inner")
+            print(df,df.columns)
+            """
             booking_df = bookingTransformations(booking_df)
-            print(booking_df["duration","hours_worked"].sample(30))
+            print(booking_df["duration","hours_worked"].describe())
+            """
+            #print(financials_df,financials_df.columns)
+            #print(booking_df["job_position","duration"].sample(20),booking_df.columns)
 
     except Exception as e:
         logger.error(f"Error detected: {e}")
