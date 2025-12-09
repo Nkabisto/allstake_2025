@@ -52,6 +52,11 @@ def bookingTransformations(df:pl.DataFrame)->pl.DataFrame:
         ).alias("duration")
     ]).drop("time_based_duration")
 
+def transformFinancialsTbl(df:pl.DataFrame)->pl.DataFrame:
+    # Cast to numeric
+     return df.with_columns([
+       pl.col(["scanner_cost_hr","auditor_controller_cost_hr","auditor_controller_cost_hr","assistant_co_ordinator_co_hr","co_ordinator_cost_hr"]).cast(pl.Float64, strict=False)])
+
 def printTables(con:connection):
     tables = ['staging_booking_tb', 'staging_financials_tb', 'staging_jobs_tb','staging_stocktaker_tb']
     for tb in tables:
@@ -59,6 +64,28 @@ def printTables(con:connection):
 
         print(df.sample(min(100,df.height)))
         print(df.columns)
+
+def getAmountPaid(df)->pl.DataFrame:
+    # Build conditional expression
+    condition = pl.when(pl.col("job_position") == "COUNTER").then(pl.col("counter_cost_hr"))
+    conditions =[ 
+            ("SCANNER", "scanner_cost_hr"),
+            ("AUDITOR", "auditor_controller_cost_hr"),
+            ("CONTROLLER","auditor_controller_cost_hr"), 
+            ("ASS-COORD", "assistant_co_ordinator_co_hr"),
+            ("COORD","co_ordinator_cost_hr")
+    ] 
+
+    for job_position, cost_col in conditions:
+        condition = condition.when(pl.col("job_position") == job_position).then(pl.col(cost_col))
+
+    hourly_rate_expr = condition.otherwise(pl.lit(0))
+
+    # Calculate final amount
+    return df.with_columns([
+        (hourly_rate_expr * pl.col("duration") + pl.col("bonuses") - pl.col("deductions"))
+        .alias("amount_paid")
+    ])
 
 if __name__ == "__main__":
     db_name = os.getenv("DB_NAME")
@@ -70,13 +97,13 @@ if __name__ == "__main__":
     conn_string = f"dbname={db_name} user={db_user} password={db_pwd} host={db_host} port={db_port}"
     try:
         with psycopg.connect(conn_string) as con:
-            financials_df = ingest_table("staging_financials_tb",con)
+            financials_df = transformFinancialsTbl(ingest_table("staging_financials_tb",con))
             job_cost_df = financials_df["job_number","status","counter_cost_hr","scanner_cost_hr","auditor_controller_cost_hr","assistant_co_ordinator_co_hr","co_ordinator_cost_hr"]
             booking_df = ingest_table("staging_booking_tb",con)
-            df = booking_df.join(job_cost_df,on="job_number",how="inner")
-            print(df,df.columns)
-            """
             booking_df = bookingTransformations(booking_df)
+            df = getAmountPaid(booking_df.join(job_cost_df,on="job_number",how="inner"))
+            print(df["student_number","job_number","booked","amount_paid"])
+            """
             print(booking_df["duration","hours_worked"].describe())
             """
             #print(financials_df,financials_df.columns)
