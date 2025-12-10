@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+import datetime as dt
 import polars as pl
 import polars.selectors as cs
 from dotenv import load_dotenv
@@ -17,6 +17,7 @@ console_handler.setFormatter(logging.Formatter(
 logger.addHandler(console_handler)
 
 load_dotenv()
+
 
 def ingest_table(table_name:str, con:connection, schema_overrides:dict=None)->pl.DataFrame:
     logger.info(f"Ingesting table: {table_name}")
@@ -80,6 +81,13 @@ def transformFinancialsTbl(df:pl.DataFrame)->pl.DataFrame:
     ]
 
     return df.with_columns(exprs)
+
+def transformJobsTbl(df:pl.DataFrame)->pl.DataFrame:
+    logger.info("Transforming the Jobs table columns")
+
+    return df.with_columns(
+        pl.col("date_of_job").cast(pl.Date, strict=False)
+    )
 
 def printTables(con:connection):
     tables = ['staging_booking_tb', 'staging_financials_tb', 'staging_jobs_tb','staging_stocktaker_tb']
@@ -186,7 +194,7 @@ if __name__ == "__main__":
 
             compare_stocktake_totals_df = booking_totals_df.join(financials_amount_cols,on="job_number", how="inner").sort("job_number", descending=True)
             
-            jobs_df = ingest_table("staging_jobs_tb", con, {"job_number":pl.Categorical})
+            jobs_df = transformJobsTbl(ingest_table("staging_jobs_tb", con, {"job_number":pl.Categorical}))
             jobs_df = jobs_df.select(
                 pl.col("job_number"),
                 pl.col("name"),
@@ -195,8 +203,16 @@ if __name__ == "__main__":
 
             logger.info("Adding stocktake names, and dates from jobs table")
             compare_stocktake_totals_df = compare_stocktake_totals_df.join(jobs_df, on="job_number", how="inner").sort("job_number",descending=True)
-            
+
+            logger.info("Filtering date_of_job to between 2025-03-01 and today")
+
+            compare_stk_totals_filtered_df = compare_stocktake_totals_df.filter(
+               pl.col("date_of_job").is_between(dt.date(2025,3,1), dt.date(2025,12,31))
+            ).sort("date_of_job", descending=False)
+
             logger.info("Comparing stocktake totals between the aggregated amounts vs one from the 'paysheet'")
+
+            das_jobs_totals_csv = compare_stk_totals_filtered_df.write_csv("./das_jobs_totals.csv")
             print(compare_stocktake_totals_df["job_number","name","date_of_job","updates_totals","updates_amount","paysheet_amount"])
 
     except Exception as e:
