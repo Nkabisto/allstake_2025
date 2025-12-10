@@ -185,9 +185,19 @@ if __name__ == "__main__":
             )
 
             compare_stocktake_totals_df = booking_totals_df.join(financials_amount_cols,on="job_number", how="inner").sort("job_number", descending=True)
+            
+            jobs_df = ingest_table("staging_jobs_tb", con, {"job_number":pl.Categorical})
+            jobs_df = jobs_df.select(
+                pl.col("job_number"),
+                pl.col("name"),
+                pl.col("date_of_job")
+            )
 
+            logger.info("Adding stocktake names, and dates from jobs table")
+            compare_stocktake_totals_df = compare_stocktake_totals_df.join(jobs_df, on="job_number", how="inner").sort("job_number",descending=True)
+            
             logger.info("Comparing stocktake totals between the aggregated amounts vs one from the 'paysheet'")
-            print(compare_stocktake_totals_df["job_number","updates_totals","updates_amount","paysheet_amount"].head(100))
+            print(compare_stocktake_totals_df["job_number","name","date_of_job","updates_totals","updates_amount","paysheet_amount"])
 
     except Exception as e:
         logger.error(f"Error detected: {e}")
