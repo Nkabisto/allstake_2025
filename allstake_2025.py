@@ -161,20 +161,33 @@ if __name__ == "__main__":
            
             booking_df = ingest_table("staging_booking_tb",con,booking_schema_overrides)
             booking_df = bookingTransformations(booking_df)
+
             df = getAmountPaid(booking_df.join(job_cost_df,on="job_number",how="inner"))
+
+            logger.info("Filtering out the booking rows with empty job_number column values")
             filter_missing_job_numbers_df = df.filter(pl.col("job_number") != '') # job_number column values cannot be empty
 
             q = (
                 filter_missing_job_numbers_df.lazy()
                 .group_by("job_number")
                 .agg(
-                    pl.col("amount_paid").sum().alias("update_totals")
+                    pl.col("amount_paid").sum().alias("updates_totals")
                 )
                 .sort("job_number", descending=True)
             )
             booking_totals_df = q.collect()
 
-            print(booking_totals_df["job_number","update_totals"].sample(20))
+            # Join the  'updates_amount' and 'paysheet_amount' columns for comparison with the updates_totals
+            financials_amount_cols  = financials_df.select(
+                pl.col("job_number"),
+                pl.col("updates_amount"),
+                pl.col("paysheet_amount")
+            )
+
+            compare_stocktake_totals_df = booking_totals_df.join(financials_amount_cols,on="job_number", how="inner").sort("job_number", descending=True)
+
+            logger.info("Comparing stocktake totals between the aggregated amounts vs one from the 'paysheet'")
+            print(compare_stocktake_totals_df["job_number","updates_totals","updates_amount","paysheet_amount"].head(100))
 
     except Exception as e:
         logger.error(f"Error detected: {e}")
