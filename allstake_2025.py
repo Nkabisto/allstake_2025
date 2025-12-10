@@ -23,7 +23,7 @@ def ingest_table(table_name:str, con:connection, schema_overrides:dict=None)->pl
     try:
         df = pl.read_database(query=f'SELECT * FROM {table_name}',connection=con, schema_overrides= schema_overrides)
     except Exception as e:
-        raise RuntimeError("Database read failed") from e
+        raise RuntimeError(f"Database read failed from {e}")
 
     return df
 
@@ -57,14 +57,16 @@ def bookingTransformations(df:pl.DataFrame)->pl.DataFrame:
     ]).drop("time_based_duration")
 
 def transformFinancialsTbl(df:pl.DataFrame)->pl.DataFrame:
-    logger.info("Transforming the Financials table columns from type string to Float64")
+    logger.info("Transforming the Financials table numeric columns from type string to Float64")
     # Cast to numeric
     numeric_cols = [
             "counter_cost_hr",
             "scanner_cost_hr",
             "auditor_controller_cost_hr",
             "assistant_co_ordinator_co_hr",
-            "co_ordinator_cost_hr"
+            "co_ordinator_cost_hr",
+            "updates_amount",
+            "paysheet_amount"
         ]
     exprs = [
         (
@@ -139,29 +141,40 @@ if __name__ == "__main__":
     conn_string = f"dbname={db_name} user={db_user} password={db_pwd} host={db_host} port={db_port}"
     try:
         with psycopg.connect(conn_string) as con:
-            financials_df = transformFinancialsTbl(ingest_table("staging_financials_tb",con))
+            financials_schema_overrides = {
+                "job_number":pl.Categorical,
+                "status": pl.Enum(["Planning","Cancelled","Payment Received","Invoiced"])
+            }
+            financials_df = transformFinancialsTbl(ingest_table("staging_financials_tb",con,financials_schema_overrides))
             job_cost_df = financials_df["job_number","status","counter_cost_hr","scanner_cost_hr","auditor_controller_cost_hr","assistant_co_ordinator_co_hr","co_ordinator_cost_hr"]
 
             
-            schema_overrides = {
+            booking_schema_overrides = {
                 "student_number":pl.Categorical,
                 "job_number": pl.Categorical,
-                "booked": pl.Enum(["To be Booked","Replaced","Booked","DP","Replacing"]),
+                "booked": pl.Enum(["To Be Booked","Replaced","Booked","DP","Replacing"]),
                 "group_name": pl.Categorical,
                 "rating": pl.Categorical,
                 "job_position": pl.Enum(["","COUNTER","SCANNER","AUDITOR","CONTROLLER","ASS COORD","COORD"]),
                 "responsible_for_qc": pl.Categorical
             }
            
-            booking_df = ingest_table("staging_booking_tb",con)
+            booking_df = ingest_table("staging_booking_tb",con,booking_schema_overrides)
             booking_df = bookingTransformations(booking_df)
             df = getAmountPaid(booking_df.join(job_cost_df,on="job_number",how="inner"))
-            print(df["student_number","job_number","booked","duration","amount_paid"])
-            """
-            print(booking_df["duration","hours_worked"].describe())
-            """
-            #print(financials_df,financials_df.columns)
-            #print(booking_df["job_position","duration"].sample(20),booking_df.columns)
+            filter_missing_job_numbers_df = df.filter(pl.col("job_number") != '') # job_number column values cannot be empty
+
+            q = (
+                filter_missing_job_numbers_df.lazy()
+                .group_by("job_number")
+                .agg(
+                    pl.col("amount_paid").sum().alias("update_totals")
+                )
+                .sort("job_number", descending=True)
+            )
+            booking_totals_df = q.collect()
+
+            print(booking_totals_df["job_number","update_totals"].sample(20))
 
     except Exception as e:
         logger.error(f"Error detected: {e}")
