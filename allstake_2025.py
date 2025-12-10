@@ -18,10 +18,10 @@ logger.addHandler(console_handler)
 
 load_dotenv()
 
-def ingest_table(table_name:str, con:connection)->pl.DataFrame:
+def ingest_table(table_name:str, con:connection, schema_overrides:dict=None)->pl.DataFrame:
     logger.info(f"Ingesting table: {table_name}")
     try:
-        df = pl.read_database(query=f'SELECT * FROM {table_name}',connection=con)
+        df = pl.read_database(query=f'SELECT * FROM {table_name}',connection=con, schema_overrides= schema_overrides)
     except Exception as e:
         raise RuntimeError("Database read failed") from e
 
@@ -141,10 +141,22 @@ if __name__ == "__main__":
         with psycopg.connect(conn_string) as con:
             financials_df = transformFinancialsTbl(ingest_table("staging_financials_tb",con))
             job_cost_df = financials_df["job_number","status","counter_cost_hr","scanner_cost_hr","auditor_controller_cost_hr","assistant_co_ordinator_co_hr","co_ordinator_cost_hr"]
+
+            
+            schema_overrides = {
+                "student_number":pl.Categorical,
+                "job_number": pl.Categorical,
+                "booked": pl.Enum(["To be Booked","Replaced","Booked","DP","Replacing"]),
+                "group_name": pl.Categorical,
+                "rating": pl.Categorical,
+                "job_position": pl.Enum(["","COUNTER","SCANNER","AUDITOR","CONTROLLER","ASS COORD","COORD"]),
+                "responsible_for_qc": pl.Categorical
+            }
+           
             booking_df = ingest_table("staging_booking_tb",con)
             booking_df = bookingTransformations(booking_df)
             df = getAmountPaid(booking_df.join(job_cost_df,on="job_number",how="inner"))
-            print(df["student_number","job_number","booked","duration","amount_paid"].sample(20))
+            print(df["student_number","job_number","booked","duration","amount_paid"])
             """
             print(booking_df["duration","hours_worked"].describe())
             """
