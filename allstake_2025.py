@@ -60,18 +60,24 @@ def transformFinancialsTbl(df:pl.DataFrame)->pl.DataFrame:
     logger.info("Transforming the Financials table columns from type string to Float64")
     # Cast to numeric
     numeric_cols = [
+            "counter_cost_hr",
             "scanner_cost_hr",
-            "auditor_controller_cost_hr",
             "auditor_controller_cost_hr",
             "assistant_co_ordinator_co_hr",
             "co_ordinator_cost_hr"
         ]
-    return df.with_columns([
-        pl.when(pl.col(numeric_cols).str.strip_chars() == "")
-            .then(None)
-            .otherwise(pl.col(numeric_cols))
-            .cast(pl.Float64, strict=False) # now safely cast
-    ])
+    exprs = [
+        (
+            pl.when(pl.col(col).str.strip_chars() == "")
+                .then(None)
+                .otherwise(pl.col(col))
+                .cast(pl.Float64, strict=False) # now safely cast
+                .alias(col)
+        )
+        for col in numeric_cols
+    ]
+
+    return df.with_columns(exprs)
 
 def printTables(con:connection):
     tables = ['staging_booking_tb', 'staging_financials_tb', 'staging_jobs_tb','staging_stocktaker_tb']
