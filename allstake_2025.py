@@ -139,6 +139,11 @@ def getAmountPaid(df:pl.DataFrame)->pl.DataFrame:
         ).alias("amount_paid")
     )
 
+def getPaysheetTotal(paysheet:str)->pl.DataFrame:
+
+
+
+
 if __name__ == "__main__":
     db_name = os.getenv("DB_NAME")
     db_host= os.getenv("DB_HOST")
