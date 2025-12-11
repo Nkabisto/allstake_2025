@@ -189,7 +189,8 @@ if __name__ == "__main__":
             financials_amount_cols  = financials_df.select(
                 pl.col("job_number"),
                 pl.col("updates_amount"),
-                pl.col("paysheet_amount")
+                pl.col("paysheet_amount"),
+                pl.col("invoice_number")
             )
 
             compare_stocktake_totals_df = booking_totals_df.join(financials_amount_cols,on="job_number", how="inner").sort("job_number", descending=True)
@@ -207,13 +208,13 @@ if __name__ == "__main__":
             logger.info("Filtering date_of_job to between 2025-03-01 and today")
 
             compare_stk_totals_filtered_df = compare_stocktake_totals_df.filter(
-               pl.col("date_of_job").is_between(dt.date(2025,3,1), dt.date(2025,12,31))
+               pl.col("date_of_job").is_between(dt.date(2025,3,1), dt.date(2025,10,31))
             ).sort("date_of_job", descending=False)
 
             logger.info("Comparing stocktake totals between the aggregated amounts vs one from the 'paysheet'")
 
             das_jobs_totals_csv = compare_stk_totals_filtered_df.write_csv("./das_jobs_totals.csv")
-            print(compare_stocktake_totals_df["job_number","name","date_of_job","updates_totals","updates_amount","paysheet_amount"])
+            print(compare_stocktake_totals_df["job_number","name","date_of_job","updates_totals","updates_amount","paysheet_amount","invoice_number"])
 
     except Exception as e:
         logger.error(f"Error detected: {e}")
