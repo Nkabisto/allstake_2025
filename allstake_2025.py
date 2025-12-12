@@ -140,9 +140,25 @@ def getAmountPaid(df:pl.DataFrame)->pl.DataFrame:
     )
 
 def getPaysheetTotal(paysheet:str)->pl.DataFrame:
+    logger.info(f"Generating a dataframe for file named: {paysheet}")
 
+    schema = {
+        "INVOICE NO.":pl.Utf8,
+        "AMOUNT PAID": pl.Utf8
+    }
 
+    df = pl.read_csv(paysheet,skip_rows=3, columns=["INVOICE NO.","AMOUNT PAID"], schema_overrides=schema)
+    return df
 
+def extractAllPaysheetsDF(folderPath:str)->pl.DataFrame:
+    dfs = []    # list to collect dataframes
+    for filename in os.listdir(folderPath):
+        file_path = os.path.join(folderPath, filename)
+        dfs.append(getPaysheetTotal(file_path))
+    
+    # Concatenate into one main dataframe
+    logger.info("Concatenating all dataframes into one main dataframe")
+    return pl.concat(dfs)
 
 if __name__ == "__main__":
     db_name = os.getenv("DB_NAME")
@@ -161,7 +177,7 @@ if __name__ == "__main__":
             financials_df = transformFinancialsTbl(ingest_table("staging_financials_tb",con,financials_schema_overrides))
             job_cost_df = financials_df["job_number","status","counter_cost_hr","scanner_cost_hr","auditor_controller_cost_hr","assistant_co_ordinator_co_hr","co_ordinator_cost_hr"]
 
-            
+
             booking_schema_overrides = {
                 "student_number":pl.Categorical,
                 "job_number": pl.Categorical,
@@ -220,6 +236,10 @@ if __name__ == "__main__":
 
             das_jobs_totals_csv = compare_stk_totals_filtered_df.write_csv("./das_jobs_totals.csv")
             print(compare_stocktake_totals_df["job_number","name","date_of_job","updates_totals","updates_amount","paysheet_amount","invoice_number"])
+
+            folder_path = "./CSVs"
+            main_ps_df =  extractAllPaysheetsDF(folder_path)
+            print(main_ps_df)
 
     except Exception as e:
         logger.error(f"Error detected: {e}")
