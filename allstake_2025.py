@@ -152,12 +152,12 @@ def getPaysheetTotal(paysheet:str)->pl.DataFrame:
     
     logger.info("Cleaning 'AMOUNT PAID' by removing currency symbols")
     return df_filter_asterix.select(
-        pl.col("INVOICE NO."),
-        pl.col("AMOUNT PAID")
+        pl.col("INVOICE NO.").alias("invoice_number"),
+        pl.col("AMOUNT PAID").alias()
         .str.replace_all(r"[^0-9\.\-]+", "") # Regex: Remove any character that is not a digit, a period (.), or a negative sign(-)
         .str.strip_chars()          # Remove any leading/trailing spaces leftover
         .cast(pl.Float64,strict=False) # Now safely cast the clean string to a float
-        .alias("AMOUNT PAID")
+        .alias("amount_paid")
     )
 
 def extractAllPaysheetsDF(folderPath:str)->pl.DataFrame:
