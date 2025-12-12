@@ -254,17 +254,21 @@ if __name__ == "__main__":
 
             logger.info("Comparing stocktake totals between the aggregated amounts vs one from the 'paysheet'")
 
-            das_jobs_totals_csv = compare_stk_totals_filtered_df.write_parquet("./das_jobs_totals.parquet")
-            print(compare_stocktake_totals_df["job_number","name","date_of_job","updates_totals","invoice_number"])
 
             folder_path = "./CSVs"
             main_ps_df =  extractAllPaysheetsDF(folder_path)
-            print(main_ps_df)
 
             final_das_jobs_df = compare_stocktake_totals_df.join(main_ps_df, on="invoice_number", how="inner")
-            print(final_das_jobs_df)
             logger.info("Converting Categorical columns to Utf8 for a safe CSV export.")
             final_das_jobs_df.write_parquet("./stocktake_summary.parquet")
+            
+            stocktakers_df = ingest_table("staging_stocktaker_tb",con,schema_overrides = {"das_number":pl.Categorical})
+            booking_final_df = filter_missing_job_numbers_df.join(stocktakers_df["das_number","first_name","surname","id"], left_on="student_number",right_on="das_number",how="inner" )
+            
+            booking_final_final = booking_final_df.join(jobs_df, on="job_number",how="inner")
+            booking_final_final = booking_final_df.join(compare_stk_totals_filtered_df,on="job_number",how="inner")
+            print(booking_final_final)
+            allstake_2025_df = booking_final_final.write_parquet("./allstake_2025.parquet")
 
     except Exception as e:
         logger.error(f"Error detected: {e}")
