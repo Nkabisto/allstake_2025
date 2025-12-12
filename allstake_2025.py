@@ -151,14 +151,24 @@ def getPaysheetTotal(paysheet:str)->pl.DataFrame:
     df_filter_asterix = df.filter((pl.col("AMOUNT PAID") != "*") &  ~pl.col("INVOICE NO.").is_null())
     
     logger.info("Cleaning 'AMOUNT PAID' by removing currency symbols")
-    return df_filter_asterix.select(
+    df = df_filter_asterix.select(
         pl.col("INVOICE NO.").alias("invoice_number"),
-        pl.col("AMOUNT PAID").alias()
+        pl.col("AMOUNT PAID")
         .str.replace_all(r"[^0-9\.\-]+", "") # Regex: Remove any character that is not a digit, a period (.), or a negative sign(-)
         .str.strip_chars()          # Remove any leading/trailing spaces leftover
         .cast(pl.Float64,strict=False) # Now safely cast the clean string to a float
         .alias("amount_paid")
     )
+
+    q = (
+        df.lazy()
+        .group_by("invoice_number")
+        .agg(
+            pl.col("amount_paid").sum().alias("stocktake_totals")
+        )
+    )
+    return q.collect()
+
 
 def extractAllPaysheetsDF(folderPath:str)->pl.DataFrame:
     dfs = []    # list to collect dataframes
@@ -187,7 +197,6 @@ if __name__ == "__main__":
             financials_df = transformFinancialsTbl(ingest_table("staging_financials_tb",con,financials_schema_overrides))
             job_cost_df = financials_df["job_number","status","counter_cost_hr","scanner_cost_hr","auditor_controller_cost_hr","assistant_co_ordinator_co_hr","co_ordinator_cost_hr"]
 
-
             booking_schema_overrides = {
                 "student_number":pl.Categorical,
                 "job_number": pl.Categorical,
@@ -205,6 +214,11 @@ if __name__ == "__main__":
 
             logger.info("Filtering out the booking rows with empty job_number column values")
             filter_missing_job_numbers_df = df.filter(pl.col("job_number") != '') # job_number column values cannot be empty
+            filter_missing_job_numbers_df = filter_missing_job_numbers_df.with_columns(
+                pl.col(pl.Categorical).cast(pl.Utf8)
+            ) 
+
+            filter_missing_job_numbers_df.write_csv("./bookings.csv")
 
             q = (
                 filter_missing_job_numbers_df.lazy()
@@ -245,11 +259,19 @@ if __name__ == "__main__":
             logger.info("Comparing stocktake totals between the aggregated amounts vs one from the 'paysheet'")
 
             das_jobs_totals_csv = compare_stk_totals_filtered_df.write_csv("./das_jobs_totals.csv")
-            print(compare_stocktake_totals_df["job_number","name","date_of_job","updates_totals","updates_amount","paysheet_amount","invoice_number"])
+            print(compare_stocktake_totals_df["job_number","name","date_of_job","updates_totals","invoice_number"])
 
             folder_path = "./CSVs"
             main_ps_df =  extractAllPaysheetsDF(folder_path)
             print(main_ps_df)
+
+            final_das_jobs_df = compare_stocktake_totals_df.join(main_ps_df, on="invoice_number", how="inner")
+            print(final_das_jobs_df)
+            logger.info("Converting Categorical columns to Utf8 for a safe CSV export.")
+            final_das_jobs_df = final_das_jobs_df.with_columns(
+                pl.col(pl.Categorical).cast(pl.Utf8)
+            )
+            final_das_jobs_df.write_csv("./stocktake_summary.csv")
 
     except Exception as e:
         logger.error(f"Error detected: {e}")
