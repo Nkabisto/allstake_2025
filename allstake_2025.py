@@ -214,11 +214,7 @@ if __name__ == "__main__":
 
             logger.info("Filtering out the booking rows with empty job_number column values")
             filter_missing_job_numbers_df = df.filter(pl.col("job_number") != '') # job_number column values cannot be empty
-            filter_missing_job_numbers_df = filter_missing_job_numbers_df.with_columns(
-                pl.col(pl.Categorical).cast(pl.Utf8)
-            ) 
-
-            filter_missing_job_numbers_df.write_csv("./bookings.csv")
+            filter_missing_job_numbers_df.write_parquet("./bookings.parquet")
 
             q = (
                 filter_missing_job_numbers_df.lazy()
@@ -258,7 +254,7 @@ if __name__ == "__main__":
 
             logger.info("Comparing stocktake totals between the aggregated amounts vs one from the 'paysheet'")
 
-            das_jobs_totals_csv = compare_stk_totals_filtered_df.write_csv("./das_jobs_totals.csv")
+            das_jobs_totals_csv = compare_stk_totals_filtered_df.write_parquet("./das_jobs_totals.parquet")
             print(compare_stocktake_totals_df["job_number","name","date_of_job","updates_totals","invoice_number"])
 
             folder_path = "./CSVs"
@@ -268,10 +264,7 @@ if __name__ == "__main__":
             final_das_jobs_df = compare_stocktake_totals_df.join(main_ps_df, on="invoice_number", how="inner")
             print(final_das_jobs_df)
             logger.info("Converting Categorical columns to Utf8 for a safe CSV export.")
-            final_das_jobs_df = final_das_jobs_df.with_columns(
-                pl.col(pl.Categorical).cast(pl.Utf8)
-            )
-            final_das_jobs_df.write_csv("./stocktake_summary.csv")
+            final_das_jobs_df.write_parquet("./stocktake_summary.parquet")
 
     except Exception as e:
         logger.error(f"Error detected: {e}")
